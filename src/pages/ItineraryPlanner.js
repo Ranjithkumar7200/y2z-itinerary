@@ -111,6 +111,8 @@ const ItineraryPlanner = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [touchStart, setTouchStart] = useState(null);
+  const [touchDraggedItem, setTouchDraggedItem] = useState(null);
   const draggedRef = useRef(null);
   const containerRef = useRef(null);
   const scrollIntervalRef = useRef(null);
@@ -137,12 +139,11 @@ const ItineraryPlanner = () => {
     setIsAutoScrolling(false);
   };
 
-  const handleAutoScroll = (e) => {
+  const handleAutoScroll = (clientY) => {
     if (!isDragging || !containerRef.current) return;
 
     const container = containerRef.current;
     const rect = container.getBoundingClientRect();
-    const clientY = e.clientY;
     const scrollThreshold = 100;
     const maxSpeed = 3;
 
@@ -164,6 +165,7 @@ const ItineraryPlanner = () => {
     }
   };
 
+  // Desktop drag handlers
   const handleDragStart = (e, index) => {
     setDraggedItem(index);
     setIsDragging(true);
@@ -183,7 +185,7 @@ const ItineraryPlanner = () => {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    handleAutoScroll(e);
+    handleAutoScroll(e.clientY);
   };
 
   const handleDragEnter = (e, index) => {
@@ -207,11 +209,77 @@ const ItineraryPlanner = () => {
       return;
     }
 
-    const newItinerary = [...itinerary];
-    const draggedCard = newItinerary[draggedItem];
+    reorderItems(draggedItem, dropIndex);
+  };
 
-    newItinerary.splice(draggedItem, 1);
-    const insertIndex = draggedItem < dropIndex ? dropIndex - 1 : dropIndex;
+  // Touch handlers for mobile
+  const handleTouchStart = (e, index) => {
+    // Only handle touch on drag handle
+    if (!e.target.closest('.drag-handle')) return;
+    
+    e.preventDefault();
+    const touch = e.touches[0];
+    setTouchStart({ x: touch.clientX, y: touch.clientY, index });
+    setTouchDraggedItem(index);
+    setIsDragging(true);
+    draggedRef.current = index;
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchStart || touchDraggedItem === null) return;
+    
+    e.preventDefault();
+    const touch = e.touches[0];
+    const deltaY = Math.abs(touch.clientY - touchStart.y);
+    
+    // Start dragging after minimum movement
+    if (deltaY > 10) {
+      setDraggedItem(touchDraggedItem);
+      
+      // Handle auto-scroll
+      handleAutoScroll(touch.clientY);
+      
+      // Find drop target
+      const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
+      const dropTarget = elements.find(el => el.closest('.drop-zone'));
+      
+      if (dropTarget) {
+        const dropIndex = parseInt(dropTarget.closest('.drop-zone').dataset.index);
+        if (dropIndex !== touchDraggedItem) {
+          setDragOverIndex(dropIndex);
+        }
+      } else {
+        setDragOverIndex(null);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!touchStart || touchDraggedItem === null) return;
+    
+    e.preventDefault();
+    stopAutoScroll();
+    
+    if (draggedItem !== null && dragOverIndex !== null && draggedItem !== dragOverIndex) {
+      reorderItems(draggedItem, dragOverIndex);
+    }
+    
+    // Reset touch states
+    setTouchStart(null);
+    setTouchDraggedItem(null);
+    setDraggedItem(null);
+    setDragOverIndex(null);
+    setIsDragging(false);
+    draggedRef.current = null;
+  };
+
+  // Reorder items function
+  const reorderItems = (fromIndex, toIndex) => {
+    const newItinerary = [...itinerary];
+    const draggedCard = newItinerary[fromIndex];
+
+    newItinerary.splice(fromIndex, 1);
+    const insertIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
     newItinerary.splice(insertIndex, 0, draggedCard);
 
     // Update numbers
@@ -235,6 +303,12 @@ const ItineraryPlanner = () => {
 
   const ActivityCard = ({ activity, index, isDraggedOver, isDraggedItem }) => (
     <div
+      className={`drop-zone ${
+        isDraggedOver
+          ? "border-2 border-blue-400 bg-blue-50 transform scale-[1.02] shadow-lg"
+          : ""
+      }`}
+      data-index={index}
       draggable
       onDragStart={(e) => handleDragStart(e, index)}
       onDragEnd={handleDragEnd}
@@ -242,111 +316,115 @@ const ItineraryPlanner = () => {
       onDragEnter={(e) => handleDragEnter(e, index)}
       onDragLeave={handleDragLeave}
       onDrop={(e) => handleDrop(e, index)}
-      className={`
-        bg-white rounded-lg p-3 md:p-4 mb-3 shadow-sm border border-gray-100
-        cursor-move transition-all duration-300 ease-out
-        hover:shadow-md hover:border-gray-200
-        ${
-          isDraggedOver
-            ? "border-2 border-blue-400 bg-blue-50 transform scale-[1.02] shadow-lg"
-            : ""
-        }
-        ${
-          isDraggedItem
-            ? "opacity-60 transform rotate-1 scale-105 shadow-xl z-50"
-            : ""
-        }
-        ${
-          isDragging && !isDraggedItem
-            ? "transition-transform duration-300"
-            : ""
-        }
-      `}
-      style={{
-        zIndex: isDraggedItem ? 1000 : 1,
-      }}
+      onTouchStart={(e) => handleTouchStart(e, index)}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
-      <div className="flex items-start space-x-3">
-        {/* Drag Handle - Mobile */}
-        <div className="flex md:hidden items-center justify-center w-6 h-6 flex-shrink-0 mt-1">
-          <div className="flex flex-col space-y-0.5">
-            <div className="w-3 h-0.5 bg-gray-400 rounded-full"></div>
-            <div className="w-3 h-0.5 bg-gray-400 rounded-full"></div>
-            <div className="w-3 h-0.5 bg-gray-400 rounded-full"></div>
+      <div
+        className={`
+          bg-white rounded-lg p-3 md:p-4 mb-3 shadow-sm border border-gray-100
+          cursor-move transition-all duration-300 ease-out
+          hover:shadow-md hover:border-gray-200
+          ${
+            isDraggedItem
+              ? "opacity-60 transform rotate-1 scale-105 shadow-xl z-50"
+              : ""
+          }
+          ${
+            isDragging && !isDraggedItem
+              ? "transition-transform duration-300"
+              : ""
+          }
+        `}
+        style={{
+          zIndex: isDraggedItem ? 1000 : 1,
+        }}
+      >
+        <div className="flex items-start space-x-3">
+          {/* Drag Handle - Mobile */}
+          <div className="drag-handle flex md:hidden items-center justify-center w-8 h-8 flex-shrink-0 mt-1 cursor-grab active:cursor-grabbing touch-none">
+            <div className="flex flex-col space-y-0.5">
+              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+            </div>
           </div>
-        </div>
 
-        {/* Activity Number - Desktop */}
-        <div className="hidden md:flex items-center justify-center w-8 h-8 flex-shrink-0 mt-1">
-          <div
-            className={`w-6 h-6 rounded-full ${activity.color} flex items-center justify-center`}
-          >
-            <span className="text-xs font-bold text-white">
-              {activity.number}
-            </span>
+          {/* Activity Number - Desktop */}
+          <div className="hidden md:flex items-center justify-center w-8 h-8 flex-shrink-0 mt-1">
+            <div
+              className={`w-6 h-6 rounded-full ${activity.color} flex items-center justify-center`}
+            >
+              <span className="text-xs font-bold text-white">
+                {activity.number}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* Activity Image */}
-        <div className="w-14 h-14 md:w-16 md:h-16 rounded-lg overflow-hidden flex-shrink-0">
-          <img
-            src={activity.image}
-            alt={activity.name}
-            className="w-full h-full object-cover"
-          />
-        </div>
+          {/* Activity Image */}
+          <div className="w-14 h-14 md:w-16 md:h-16 rounded-lg overflow-hidden flex-shrink-0">
+            <img
+              src={activity.image}
+              alt={activity.name}
+              className="w-full h-full object-cover"
+            />
+          </div>
 
-        {/* Activity Details */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 pr-2">
-              <h3 className="font-semibold text-gray-900 text-sm md:text-base mb-1 leading-tight">
-                {activity.name}
-              </h3>
-              <div className="flex items-center space-x-2 mb-2">
-                <div className="flex items-center">
-                  <span className="text-yellow-400 text-sm">★</span>
-                  <span className="text-sm font-medium text-gray-700 ml-1">
-                    {activity.rating}
+          {/* Activity Details */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between">
+              <div className="flex-1 pr-2">
+                <h3 className="font-semibold text-gray-900 text-sm md:text-base mb-1 leading-tight">
+                  {activity.name}
+                </h3>
+                <div className="flex items-center space-x-2 mb-2">
+                  <div className="flex items-center">
+                    <span className="text-yellow-400 text-sm">★</span>
+                    <span className="text-sm font-medium text-gray-700 ml-1">
+                      {activity.rating}
+                    </span>
+                  </div>
+                  <span className="text-gray-400 text-xs">
+                    ({activity.reviews.toLocaleString()})
                   </span>
                 </div>
-                <span className="text-gray-400 text-xs">
-                  ({activity.reviews.toLocaleString()})
-                </span>
+                <p className="text-xs md:text-sm text-gray-600 leading-relaxed line-clamp-2">
+                  {activity.description}
+                </p>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 leading-relaxed line-clamp-2">
-                {activity.description}
-              </p>
-            </div>
 
-            {/* Action Icons */}
-            <div className="flex items-start space-x-1">
-              <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-                <MapPin className="w-4 h-4 text-blue-500" />
-              </button>
-              <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-                <Link className="w-4 h-4 text-gray-400" />
-              </button>
-              <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-                <Trash2 className="w-4 h-4 text-red-400" />
-              </button>
-              <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-                <MoreVertical className="w-4 h-4 text-gray-400" />
-              </button>
+              {/* Action Icons */}
+              <div className="flex items-start space-x-1">
+                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
+                  <MapPin className="w-4 h-4 text-blue-500" />
+                </button>
+                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
+                  <Link className="w-4 h-4 text-gray-400" />
+                </button>
+                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                </button>
+                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
+                  <MoreVertical className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Drag Handle - Desktop */}
-      <div className="hidden md:flex justify-center mt-3 opacity-40">
-        <div className="flex space-x-1">
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-          <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+        {/* Drag Handle - Desktop */}
+        <div className="hidden md:flex justify-center mt-3 opacity-40 drag-handle cursor-grab active:cursor-grabbing">
+          <div className="flex space-x-1">
+            <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -355,12 +433,15 @@ const ItineraryPlanner = () => {
   const CreateButton = () => (
     <div className="bg-white rounded-lg p-3 md:p-4 mb-3 shadow-sm border border-gray-100">
       <div className="flex items-center space-x-3">
-        {/* Drag Handle - Mobile */}
-        <div className="flex md:hidden items-center justify-center w-6 h-6 flex-shrink-0">
+        {/* Drag Handle - Mobile (disabled for create button) */}
+        <div className="flex md:hidden items-center justify-center w-8 h-8 flex-shrink-0 opacity-30">
           <div className="flex flex-col space-y-0.5">
-            <div className="w-3 h-0.5 bg-gray-300 rounded-full"></div>
-            <div className="w-3 h-0.5 bg-gray-300 rounded-full"></div>
-            <div className="w-3 h-0.5 bg-gray-300 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
           </div>
         </div>
 
@@ -408,11 +489,27 @@ const ItineraryPlanner = () => {
           </div>
         )}
 
+        {/* Drag instruction */}
+        <div className="p-4 pb-2">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <p className="text-xs text-blue-700 text-center">
+              <span className="inline-flex items-center mr-1">
+                <div className="flex flex-col space-y-0.5">
+                  <div className="w-1 h-1 bg-blue-600 rounded-full"></div>
+                  <div className="w-1 h-1 bg-blue-600 rounded-full"></div>
+                  <div className="w-1 h-1 bg-blue-600 rounded-full"></div>
+                </div>
+              </span>
+              Touch and drag the grip icon to reorder items
+            </p>
+          </div>
+        </div>
+
         {/* Itinerary Section */}
         <div 
           ref={containerRef}
-          className="p-4 pb-8 overflow-y-auto"
-          style={{ maxHeight: "calc(100vh - 80px)" }}
+          className="px-4 pb-8 overflow-y-auto"
+          style={{ maxHeight: "calc(100vh - 160px)" }}
         >
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-1">Itinerary</h2>
