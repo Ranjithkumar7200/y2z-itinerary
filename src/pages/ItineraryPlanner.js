@@ -4,8 +4,8 @@ import {
   MoreVertical,
   Menu,
   Trash2,
-  Link,
   Plus,
+  Paperclip,
 } from "lucide-react";
 
 const ItineraryPlanner = () => {
@@ -121,11 +121,11 @@ const ItineraryPlanner = () => {
   // Auto-scroll functionality
   const startAutoScroll = (direction, speed = 1) => {
     if (scrollIntervalRef.current) return;
-    
+
     setIsAutoScrolling(true);
     scrollIntervalRef.current = setInterval(() => {
       if (containerRef.current) {
-        const scrollAmount = direction === 'up' ? -10 * speed : 10 * speed;
+        const scrollAmount = direction === "up" ? -10 * speed : 10 * speed;
         containerRef.current.scrollBy(0, scrollAmount);
       }
     }, 16); // ~60fps
@@ -153,13 +153,21 @@ const ItineraryPlanner = () => {
 
     if (distanceFromTop < scrollThreshold && container.scrollTop > 0) {
       // Near top edge - scroll up
-      const speed = Math.max(1, maxSpeed * (1 - distanceFromTop / scrollThreshold));
-      startAutoScroll('up', speed);
-    } else if (distanceFromBottom < scrollThreshold && 
-               container.scrollTop < (container.scrollHeight - container.clientHeight)) {
+      const speed = Math.max(
+        1,
+        maxSpeed * (1 - distanceFromTop / scrollThreshold)
+      );
+      startAutoScroll("up", speed);
+    } else if (
+      distanceFromBottom < scrollThreshold &&
+      container.scrollTop < container.scrollHeight - container.clientHeight
+    ) {
       // Near bottom edge - scroll down
-      const speed = Math.max(1, maxSpeed * (1 - distanceFromBottom / scrollThreshold));
-      startAutoScroll('down', speed);
+      const speed = Math.max(
+        1,
+        maxSpeed * (1 - distanceFromBottom / scrollThreshold)
+      );
+      startAutoScroll("down", speed);
     } else {
       stopAutoScroll();
     }
@@ -215,36 +223,41 @@ const ItineraryPlanner = () => {
   // Touch handlers for mobile
   const handleTouchStart = (e, index) => {
     // Only handle touch on drag handle
-    if (!e.target.closest('.drag-handle')) return;
-    
-    e.preventDefault();
+    if (!e.target.closest(".drag-handle")) return;
+
     const touch = e.touches[0];
     setTouchStart({ x: touch.clientX, y: touch.clientY, index });
     setTouchDraggedItem(index);
-    setIsDragging(true);
-    draggedRef.current = index;
   };
 
   const handleTouchMove = (e) => {
     if (!touchStart || touchDraggedItem === null) return;
-    
-    e.preventDefault();
+
     const touch = e.touches[0];
+    const deltaX = Math.abs(touch.clientX - touchStart.x);
     const deltaY = Math.abs(touch.clientY - touchStart.y);
-    
-    // Start dragging after minimum movement
-    if (deltaY > 10) {
-      setDraggedItem(touchDraggedItem);
-      
+
+    // Start dragging after minimum movement and more vertical than horizontal
+    if (deltaY > 15 && deltaY > deltaX) {
+      e.preventDefault(); // Only prevent default when actually dragging
+
+      if (!isDragging) {
+        setIsDragging(true);
+        draggedRef.current = touchDraggedItem;
+        setDraggedItem(touchDraggedItem);
+      }
+
       // Handle auto-scroll
       handleAutoScroll(touch.clientY);
-      
+
       // Find drop target
       const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-      const dropTarget = elements.find(el => el.closest('.drop-zone'));
-      
+      const dropTarget = elements.find((el) => el.closest(".drop-zone"));
+
       if (dropTarget) {
-        const dropIndex = parseInt(dropTarget.closest('.drop-zone').dataset.index);
+        const dropIndex = parseInt(
+          dropTarget.closest(".drop-zone").dataset.index
+        );
         if (dropIndex !== touchDraggedItem) {
           setDragOverIndex(dropIndex);
         }
@@ -255,15 +268,19 @@ const ItineraryPlanner = () => {
   };
 
   const handleTouchEnd = (e) => {
-    if (!touchStart || touchDraggedItem === null) return;
-    
-    e.preventDefault();
+    if (!touchStart) return;
+
     stopAutoScroll();
-    
-    if (draggedItem !== null && dragOverIndex !== null && draggedItem !== dragOverIndex) {
+
+    if (
+      isDragging &&
+      draggedItem !== null &&
+      dragOverIndex !== null &&
+      draggedItem !== dragOverIndex
+    ) {
       reorderItems(draggedItem, dragOverIndex);
     }
-    
+
     // Reset touch states
     setTouchStart(null);
     setTouchDraggedItem(null);
@@ -343,14 +360,7 @@ const ItineraryPlanner = () => {
         <div className="flex items-start space-x-3">
           {/* Drag Handle - Mobile */}
           <div className="drag-handle flex md:hidden items-center justify-center w-8 h-8 flex-shrink-0 mt-1 cursor-grab active:cursor-grabbing touch-none">
-            <div className="flex flex-col space-y-0.5">
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-              <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
-            </div>
+            <Menu className="w-5 h-5 text-gray-400" />
           </div>
 
           {/* Activity Number - Desktop */}
@@ -401,10 +411,10 @@ const ItineraryPlanner = () => {
                 <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
                   <MapPin className="w-4 h-4 text-blue-500" />
                 </button>
-                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-                  <Link className="w-4 h-4 text-gray-400" />
+                <button className="hidden md:flex p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
+                  <Paperclip className="w-4 h-4 text-gray-400" />
                 </button>
-                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
+                <button className="hidden md:flex p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
                   <Trash2 className="w-4 h-4 text-red-400" />
                 </button>
                 <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors duration-200">
@@ -435,14 +445,7 @@ const ItineraryPlanner = () => {
       <div className="flex items-center space-x-3">
         {/* Drag Handle - Mobile (disabled for create button) */}
         <div className="flex md:hidden items-center justify-center w-8 h-8 flex-shrink-0 opacity-30">
-          <div className="flex flex-col space-y-0.5">
-            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-            <div className="w-1 h-1 bg-gray-300 rounded-full"></div>
-          </div>
+          <Menu className="w-5 h-5 text-gray-300" />
         </div>
 
         {/* Create Button Icon */}
@@ -493,20 +496,14 @@ const ItineraryPlanner = () => {
         <div className="p-4 pb-2">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
             <p className="text-xs text-blue-700 text-center">
-              <span className="inline-flex items-center mr-1">
-                <div className="flex flex-col space-y-0.5">
-                  <div className="w-1 h-1 bg-blue-600 rounded-full"></div>
-                  <div className="w-1 h-1 bg-blue-600 rounded-full"></div>
-                  <div className="w-1 h-1 bg-blue-600 rounded-full"></div>
-                </div>
-              </span>
-              Touch and drag the grip icon to reorder items
+              <Menu className="w-4 h-4 inline mr-1" />
+              Touch and drag the menu icon to reorder items
             </p>
           </div>
         </div>
 
         {/* Itinerary Section */}
-        <div 
+        <div
           ref={containerRef}
           className="px-4 pb-8 overflow-y-auto"
           style={{ maxHeight: "calc(100vh - 160px)" }}
